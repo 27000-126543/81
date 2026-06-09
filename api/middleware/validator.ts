@@ -5,7 +5,8 @@ import type { ApiResponse } from '../../shared/types.js';
 export function validateBody<T extends ZodSchema>(schema: T) {
   return (req: Request, res: Response, next: NextFunction): void => {
     try {
-      schema.parse(req.body);
+      const parsed = schema.parse(req.body);
+      Object.assign(req.body, parsed);
       next();
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -34,7 +35,8 @@ export function validateBody<T extends ZodSchema>(schema: T) {
 export function validateQuery<T extends ZodSchema>(schema: T) {
   return (req: Request, res: Response, next: NextFunction): void => {
     try {
-      schema.parse(req.query);
+      const parsed = schema.parse(req.query);
+      Object.assign(req.query, parsed);
       next();
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -63,7 +65,8 @@ export function validateQuery<T extends ZodSchema>(schema: T) {
 export function validateParams<T extends ZodSchema>(schema: T) {
   return (req: Request, res: Response, next: NextFunction): void => {
     try {
-      schema.parse(req.params);
+      const parsed = schema.parse(req.params);
+      Object.assign(req.params, parsed);
       next();
     } catch (error) {
       if (error instanceof z.ZodError) {

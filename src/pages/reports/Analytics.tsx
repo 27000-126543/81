@@ -983,7 +983,7 @@ export default function Analytics() {
       const warehouseId = filters.warehouses.length > 0 ? Number(filters.warehouses[0]) : undefined;
       const carrier = filters.transportModes.length > 0 ? filters.transportModes[0] : undefined;
 
-      const blob = await exportReport(activeTab, format, {
+      const { blob, filename } = await exportReport(activeTab, format, {
         startDate,
         endDate,
         warehouseId,
@@ -994,10 +994,12 @@ export default function Analytics() {
       clearInterval(progressInterval);
       setExportState((prev) => ({ ...prev, progress: 100 }));
 
+      const downloadFilename = filename || `${activeTab}_报告_${formatDate(new Date(), 'YYYYMM')}.${format}`;
+      
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `report_${activeTab}_${formatDate(new Date(), 'YYYYMMDD')}.${format}`;
+      link.download = downloadFilename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

@@ -2,6 +2,7 @@ import { get, post, put } from './index';
 import type {
   PaginatedResponse,
   ReturnRecord,
+  ReturnRecordWithInventory,
 } from '../types';
 
 interface ReturnQueryParams {
@@ -20,8 +21,8 @@ export const getReturnList = async (
   return response.data;
 };
 
-export const getReturnById = async (id: number): Promise<ReturnRecord> => {
-  const response = await get<ReturnRecord>(`/returns/${id}`);
+export const getReturnById = async (id: number): Promise<ReturnRecordWithInventory> => {
+  const response = await get<ReturnRecordWithInventory>(`/returns/${id}`);
   return response.data;
 };
 
@@ -36,8 +37,8 @@ export const updateReturnLiability = async (
   id: number,
   liability: string,
   reason?: string
-): Promise<ReturnRecord> => {
-  const response = await post<ReturnRecord>(`/returns/${id}/liability`, { liability, reason });
+): Promise<ReturnRecordWithInventory> => {
+  const response = await put<ReturnRecordWithInventory>(`/returns/${id}/liability`, { liability, reason });
   return response.data;
 };
 
@@ -51,21 +52,21 @@ export const updateReturnStatus = async (
 
 export const processRefund = async (
   returnId: number
-): Promise<ReturnRecord> => {
-  const response = await post<ReturnRecord>(`/returns/${returnId}/refund`);
+): Promise<ReturnRecordWithInventory> => {
+  const response = await post<ReturnRecordWithInventory>(`/returns/${returnId}/refund`);
   return response.data;
 };
 
 export const processExchange = async (
   returnId: number
-): Promise<ReturnRecord> => {
-  const response = await post<ReturnRecord>(`/returns/${returnId}/exchange`);
+): Promise<ReturnRecordWithInventory> => {
+  const response = await post<ReturnRecordWithInventory>(`/returns/${returnId}/exchange`);
   return response.data;
 };
 
 export const processScrap = async (
   returnId: number
-): Promise<ReturnRecord> => {
-  const response = await post<ReturnRecord>(`/returns/${returnId}/scrap`);
+): Promise<ReturnRecordWithInventory> => {
+  const response = await post<ReturnRecordWithInventory>(`/returns/${returnId}/scrap`);
   return response.data;
 };

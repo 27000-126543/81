@@ -26,12 +26,13 @@ import {
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
 import { getOrderList, getOrderById, updateOrderStatus, generateCustomsDocuments } from '../../api/orders';
+import { getLogisticsTrackingByOrderId } from '../../api/logistics';
 import DataTable from '../../components/ui/DataTable';
 import Modal from '../../components/ui/Modal';
 import StatusBadge from '../../components/ui/StatusBadge';
 import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { formatDate, formatCurrency, getStatusLabel, getStatusColor } from '../../utils/format';
-import type { Order, OrderItem, LogisticsTrajectoryPoint } from '../../types';
+import type { Order, OrderItem, LogisticsTrajectoryPoint, LogisticsTracking } from '../../types';
 
 const orderStatusOptions = [
   { value: '', label: '全部状态' },
@@ -90,6 +91,7 @@ export default function OrderList() {
   const [detailModal, setDetailModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [logisticsTracking, setLogisticsTracking] = useState<LogisticsTracking | null>(null);
   const [statusModal, setStatusModal] = useState(false);
   const [newStatus, setNewStatus] = useState('');
   const [toast, setToast] = useState<{ show: boolean; message: string; type: 'success' | 'error' }>({
@@ -156,6 +158,14 @@ export default function OrderList() {
     try {
       const detail = await getOrderById(order.id);
       setSelectedOrder(detail);
+      
+      try {
+        const tracking = await getLogisticsTrackingByOrderId(order.id);
+        setLogisticsTracking(tracking);
+      } catch (err) {
+        setLogisticsTracking(null);
+      }
+      
       setDetailModal(true);
     } catch (err) {
       showToast('加载订单详情失败', 'error');
@@ -174,6 +184,13 @@ export default function OrderList() {
       if (detailModal) {
         const detail = await getOrderById(selectedOrder.id);
         setSelectedOrder(detail);
+        
+        try {
+          const tracking = await getLogisticsTrackingByOrderId(selectedOrder.id);
+          setLogisticsTracking(tracking);
+        } catch (err) {
+          setLogisticsTracking(null);
+        }
       }
     } catch (err) {
       showToast(err instanceof Error ? err.message : '更新失败', 'error');
@@ -441,7 +458,7 @@ export default function OrderList() {
       title: '发货仓',
       render: (row: Order) => (
         <span className="text-sm">
-          {row.fulfilledWarehouse?.name || '-'}
+          {row.fulfilledWarehouse?.name || '未分配'}
         </span>
       ),
     },
@@ -528,33 +545,6 @@ export default function OrderList() {
       iconBg: 'bg-red/20 text-red',
       trend: '-2',
       trendUp: true,
-    },
-  ];
-
-  const mockTrajectory: LogisticsTrajectoryPoint[] = [
-    {
-      timestamp: '2024-01-15 14:30:00',
-      location: '洛杉矶仓库',
-      status: '已发货',
-      description: '包裹已从洛杉矶仓库发出',
-    },
-    {
-      timestamp: '2024-01-15 18:45:00',
-      location: '洛杉矶国际机场',
-      status: '运输中',
-      description: '包裹已抵达机场，等待航班',
-    },
-    {
-      timestamp: '2024-01-16 08:20:00',
-      location: '纽约肯尼迪机场',
-      status: '运输中',
-      description: '包裹已到达纽约，正在转运',
-    },
-    {
-      timestamp: '2024-01-16 14:00:00',
-      location: '纽约海关',
-      status: '清关中',
-      description: '包裹正在进行清关检查',
     },
   ];
 
@@ -941,31 +931,42 @@ export default function OrderList() {
                 物流轨迹
               </h4>
               <div className="relative pl-8">
-                {mockTrajectory.map((point, idx) => (
-                  <div key={idx} className="relative pb-6 last:pb-0">
-                    <div
-                      className={`absolute left-[-24px] w-3 h-3 rounded-full border-2 ${
-                        idx === 0
-                          ? 'bg-cyan border-cyan'
-                          : idx === mockTrajectory.length - 1
-                          ? 'bg-bg-card border-amber'
-                          : 'bg-bg-card border-border-color'
-                      }`}
-                    />
-                    {idx < mockTrajectory.length - 1 && (
-                      <div className="absolute left-[-19px] top-3 w-0.5 h-full bg-border-color" />
-                    )}
-                    <div className="flex items-start gap-3">
-                      <div>
-                        <p className="font-medium text-sm">{point.status}</p>
-                        <p className="text-xs text-text-secondary">{point.description}</p>
-                        <p className="text-xs text-text-muted mt-1">
-                          {point.location} · {formatDate(point.timestamp)}
-                        </p>
+                {logisticsTracking?.trajectory && logisticsTracking.trajectory.length > 0 ? (
+                  logisticsTracking.trajectory
+                    .sort(
+                      (a, b) =>
+                        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+                    )
+                    .map((point: LogisticsTrajectoryPoint, idx: number) => (
+                      <div key={idx} className="relative pb-6 last:pb-0">
+                        <div
+                          className={`absolute left-[-24px] w-3 h-3 rounded-full border-2 ${
+                            idx === 0
+                              ? 'bg-cyan border-cyan'
+                              : 'bg-bg-card border-border-color'
+                          }`}
+                        />
+                        {idx < logisticsTracking.trajectory!.length - 1 && (
+                          <div className="absolute left-[-19px] top-3 w-0.5 h-full bg-border-color" />
+                        )}
+                        <div className="flex items-start gap-3">
+                          <div>
+                            <p className={`font-medium text-sm ${idx === 0 ? 'text-cyan' : ''}`}>
+                              {point.status}
+                            </p>
+                            <p className="text-xs text-text-secondary">{point.description}</p>
+                            <p className="text-xs text-text-muted mt-1">
+                              {point.location} · {formatDate(point.timestamp)}
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    ))
+                ) : (
+                  <div className="text-center py-8 text-text-muted">
+                    暂无物流轨迹信息
                   </div>
-                ))}
+                )}
               </div>
             </div>
 

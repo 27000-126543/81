@@ -143,8 +143,28 @@ router.get(
   validateQuery(reportQuerySchema),
   async (req: AuthRequest, res: Response): Promise<void> => {
     const { type } = req.params as any;
-    const result = reportService.exportReport(type, req.query);
-    res.status(result.code === 200 ? 200 : 400).json(result);
+    const { format = 'xlsx' } = req.query as any;
+    
+    const result = reportService.exportReport(type, format, req.query);
+    
+    if (!result) {
+      res.status(400).json({
+        code: 400,
+        message: '不支持的报表类型',
+        data: null,
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    const { buffer, filename, mimeType } = result;
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.setHeader('Content-Length', buffer.length);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    
+    res.status(200).send(buffer);
   },
 );
 

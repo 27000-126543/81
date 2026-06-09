@@ -48,7 +48,7 @@ import {
   formatRelativeTime,
   truncateText,
 } from '../../utils/format';
-import type { ReturnRecord, Product, Order, ReturnLiability } from '../../types';
+import type { ReturnRecord, Product, Order, ReturnLiability, InventoryChange, ReturnRecordWithInventory } from '../../types';
 
 const returnStatusOptions = [
   { value: '', label: '全部状态' },
@@ -112,7 +112,7 @@ export default function ReturnList() {
 
   const [showFilters, setShowFilters] = useState(false);
   const [detailModal, setDetailModal] = useState(false);
-  const [selectedReturn, setSelectedReturn] = useState<ReturnRecord | null>(null);
+  const [selectedReturn, setSelectedReturn] = useState<ReturnRecordWithInventory | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [liabilityModal, setLiabilityModal] = useState(false);
   const [selectedLiability, setSelectedLiability] = useState<ReturnLiability | ''>('');
@@ -126,8 +126,7 @@ export default function ReturnList() {
   const [confirmModal, setConfirmModal] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{ type: string; title: string }>({ type: '', title: '' });
   const [refundAmount, setRefundAmount] = useState(0);
-  const [inventoryBefore, setInventoryBefore] = useState(0);
-  const [inventoryAfter, setInventoryAfter] = useState(0);
+  const [inventoryChange, setInventoryChange] = useState<InventoryChange | null>(null);
   const [processRecords, setProcessRecords] = useState<ProcessRecord[]>([]);
 
   const [stats, setStats] = useState({
@@ -200,6 +199,7 @@ export default function ReturnList() {
 
   const handleViewDetail = async (returnRecord: ReturnRecord) => {
     setDetailLoading(true);
+    setInventoryChange(null);
     try {
       const detail = await getReturnById(returnRecord.id);
       setSelectedReturn(detail);
@@ -223,16 +223,6 @@ export default function ReturnList() {
       }
       setProcessRecords(records);
 
-      if (detail.status === 'inspecting' || detail.status === 'processing') {
-        const currentInventory = Math.floor(Math.random() * 100) + 50;
-        setInventoryBefore(currentInventory);
-        if (detail.liability && detail.liability !== 'customer') {
-          setInventoryAfter(currentInventory + detail.quantity);
-        } else {
-          setInventoryAfter(currentInventory);
-        }
-      }
-
       setDetailModal(true);
     } catch (err) {
       showToast('加载退货详情失败', 'error');
@@ -251,15 +241,14 @@ export default function ReturnList() {
   const handleConfirmLiability = async () => {
     if (!selectedReturn || !selectedLiability) return;
     try {
-      await updateReturnLiability(selectedReturn.id, selectedLiability, liabilityRemark);
+      const result = await updateReturnLiability(selectedReturn.id, selectedLiability, liabilityRemark) as ReturnRecordWithInventory;
       showToast('责任判定成功', 'success');
       setLiabilityModal(false);
       setSelectedLiability('');
       setLiabilityRemark('');
       setLiabilityEvidence('');
+      setSelectedReturn(result);
       await fetchReturns();
-      const detail = await getReturnById(selectedReturn.id);
-      setSelectedReturn(detail);
     } catch (err) {
       showToast(err instanceof Error ? err.message : '责任判定失败', 'error');
     }
@@ -273,20 +262,23 @@ export default function ReturnList() {
   const handleConfirmAction = async () => {
     if (!selectedReturn) return;
     try {
+      let result: ReturnRecordWithInventory | null = null;
       if (confirmAction.type === 'refund') {
-        await processRefund(selectedReturn.id);
+        result = await processRefund(selectedReturn.id) as ReturnRecordWithInventory;
         showToast('退款确认成功，库存已更新', 'success');
       } else if (confirmAction.type === 'exchange') {
-        await processExchange(selectedReturn.id);
-        showToast('换货确认成功', 'success');
+        result = await processExchange(selectedReturn.id) as ReturnRecordWithInventory;
+        showToast('换货确认成功，库存已更新', 'success');
       } else if (confirmAction.type === 'scrap') {
-        await processScrap(selectedReturn.id);
+        result = await processScrap(selectedReturn.id) as ReturnRecordWithInventory;
         showToast('报废确认成功', 'success');
       }
       setConfirmModal(false);
+      if (result && result.inventoryChange) {
+        setInventoryChange(result.inventoryChange);
+        setSelectedReturn(result);
+      }
       await fetchReturns();
-      const detail = await getReturnById(selectedReturn.id);
-      setSelectedReturn(detail);
     } catch (err) {
       showToast(err instanceof Error ? err.message : '操作失败', 'error');
     }
@@ -979,27 +971,44 @@ export default function ReturnList() {
               </div>
             )}
 
-            {(selectedReturn.status === 'inspecting' || selectedReturn.status === 'processing') && (
-              <div className="card bg-bg-dark/50">
-                <h4 className="text-sm font-medium text-text-muted mb-3">库存更新确认</h4>
+            {inventoryChange && (
+              <div className="card bg-bg-dark/50 border-cyan/30">
+                <h4 className="text-sm font-medium text-cyan-light mb-3">库存变化记录</h4>
                 <div className="flex items-center justify-center gap-8 py-4">
                   <div className="text-center">
                     <p className="text-xs text-text-muted mb-1">更新前库存</p>
-                    <p className="text-2xl font-bold font-mono text-text-secondary">{inventoryBefore}</p>
+                    <p className="text-2xl font-bold font-mono text-text-secondary">{inventoryChange.before}</p>
                   </div>
                   <div className="text-cyan">
                     <ArrowRight size={24} />
                   </div>
                   <div className="text-center">
                     <p className="text-xs text-text-muted mb-1">更新后库存</p>
-                    <p className="text-2xl font-bold font-mono text-green">{inventoryAfter}</p>
+                    <p className="text-2xl font-bold font-mono text-green">{inventoryChange.after}</p>
                   </div>
                   <div className="text-center">
                     <p className="text-xs text-text-muted mb-1">变化量</p>
-                    <p className={`text-2xl font-bold font-mono ${inventoryAfter - inventoryBefore >= 0 ? 'text-cyan' : 'text-red'}`}>
-                      {inventoryAfter - inventoryBefore >= 0 ? '+' : ''}{inventoryAfter - inventoryBefore}
+                    <p className={`text-2xl font-bold font-mono ${inventoryChange.change >= 0 ? 'text-cyan' : 'text-red'}`}>
+                      {inventoryChange.change >= 0 ? '+' : ''}{inventoryChange.change}
                     </p>
                   </div>
+                </div>
+                <div className="mt-3 p-3 bg-bg-card rounded-lg">
+                  <p className="text-xs text-text-muted mb-1">变化原因</p>
+                  <p className="text-sm text-text-secondary">{inventoryChange.reason}</p>
+                </div>
+              </div>
+            )}
+
+            {(selectedReturn.status === 'inspecting' || selectedReturn.status === 'processing') && selectedReturn.liability && !inventoryChange && (
+              <div className="card bg-bg-dark/50">
+                <h4 className="text-sm font-medium text-text-muted mb-3">预期库存变化</h4>
+                <div className="p-3 bg-bg-card rounded-lg">
+                  <p className="text-sm text-text-secondary">
+                    {selectedReturn.liability === 'customer' && '用户责任：退款后库存不变，换货后库存减少退货数量'}
+                    {selectedReturn.liability === 'logistics' && '物流责任：退款后库存增加退货数量，换货后库存不变'}
+                    {selectedReturn.liability === 'quality' && '品质问题：退款后库存不变，换货后库存减少退货数量，报废后库存不变'}
+                  </p>
                 </div>
               </div>
             )}
@@ -1229,20 +1238,45 @@ export default function ReturnList() {
               </div>
             </div>
           )}
-          {confirmAction.type === 'refund' && selectedReturn?.liability !== 'customer' && (
+          {confirmAction.type === 'refund' && selectedReturn?.liability && (
             <div className="p-4 bg-bg-dark rounded-xl">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-text-secondary">更新前库存</span>
-                <span className="font-mono">{inventoryBefore}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-text-secondary">更新后库存</span>
-                <span className="font-mono text-green">{inventoryAfter}</span>
-              </div>
-              <div className="flex justify-between items-center mt-2 pt-2 border-t border-border-color">
-                <span className="text-text-secondary">变化量</span>
-                <span className="font-mono text-cyan">+{inventoryAfter - inventoryBefore}</span>
-              </div>
+              {selectedReturn.liability === 'logistics' ? (
+                <>
+                  <p className="text-sm text-cyan mb-2">物流责任：库存将增加 {selectedReturn.quantity} 件</p>
+                  <p className="text-xs text-text-muted">原因：商品退回后可重新销售</p>
+                </>
+              ) : selectedReturn.liability === 'customer' ? (
+                <>
+                  <p className="text-sm text-amber mb-2">用户责任：库存不变</p>
+                  <p className="text-xs text-text-muted">原因：用户原因，不影响销售库存</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-red mb-2">品质问题：库存不变</p>
+                  <p className="text-xs text-text-muted">原因：品质问题，商品报废处理</p>
+                </>
+              )}
+            </div>
+          )}
+          {confirmAction.type === 'exchange' && selectedReturn?.liability && (
+            <div className="p-4 bg-bg-dark rounded-xl">
+              {selectedReturn.liability === 'logistics' ? (
+                <>
+                  <p className="text-sm text-cyan mb-2">物流责任：库存不变</p>
+                  <p className="text-xs text-text-muted">原因：发出新商品扣减库存，退回商品重新入库</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-red mb-2">{selectedReturn.liability === 'customer' ? '用户责任' : '品质问题'}：库存将减少 {selectedReturn.quantity} 件</p>
+                  <p className="text-xs text-text-muted">原因：发出新商品扣减库存，退回商品不入库</p>
+                </>
+              )}
+            </div>
+          )}
+          {confirmAction.type === 'scrap' && (
+            <div className="p-4 bg-bg-dark rounded-xl">
+              <p className="text-sm text-amber mb-2">报废处理：库存不变</p>
+              <p className="text-xs text-text-muted">原因：商品报废处理，不进入库存</p>
             </div>
           )}
         </div>

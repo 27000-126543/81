@@ -1,5 +1,4 @@
-import { get } from './index';
-import api from './index';
+import { get, getBlob } from './index';
 import type { SupplyChainMetrics } from '../types';
 
 export const getSupplyChainMetrics = async (
@@ -107,13 +106,9 @@ export const exportReport = async (
   reportType: string,
   format: 'xlsx' | 'pdf',
   params?: Record<string, unknown>
-): Promise<Blob> => {
-  const response = await api.get(`/reports/export/${reportType}`, {
-    params: {
-      format,
-      ...params,
-    },
-    responseType: 'blob',
+): Promise<{ blob: Blob; filename: string }> => {
+  return getBlob(`/reports/export/${reportType}`, {
+    format,
+    ...params,
   });
-  return response.data;
 };

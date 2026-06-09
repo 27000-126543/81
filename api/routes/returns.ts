@@ -26,6 +26,7 @@ const returnCreateSchema = z.object({
 
 const liabilitySchema = z.object({
   liability: z.enum(['customer', 'logistics', 'quality']),
+  reason: z.string().optional(),
 });
 
 const returnStatusSchema = z.object({
@@ -45,18 +46,6 @@ router.get(
   },
 );
 
-router.get(
-  '/:id',
-  authMiddleware,
-  requireRoles(...viewRoles),
-  validateParams(idSchema),
-  async (req: AuthRequest, res: Response): Promise<void> => {
-    const { id } = req.params as any;
-    const result = returnService.getReturnById(id);
-    res.status(result.code === 200 ? 200 : result.code === 404 ? 404 : 400).json(result);
-  },
-);
-
 router.post(
   '/',
   authMiddleware,
@@ -68,7 +57,7 @@ router.post(
   },
 );
 
-router.post(
+router.put(
   '/:id/liability',
   authMiddleware,
   requireRoles(...processRoles),
@@ -76,8 +65,8 @@ router.post(
   validateBody(liabilitySchema),
   async (req: AuthRequest, res: Response): Promise<void> => {
     const { id } = req.params as any;
-    const { liability } = req.body;
-    const result = returnService.determineLiability(id, liability as ReturnLiability);
+    const { liability, reason } = req.body;
+    const result = returnService.updateReturnLiability(id, liability as ReturnLiability, reason);
     res.status(result.code === 200 ? 200 : result.code === 404 ? 404 : 400).json(result);
   },
 );
@@ -132,16 +121,14 @@ router.put(
   },
 );
 
-router.put(
-  '/:id/liability',
+router.get(
+  '/:id',
   authMiddleware,
-  requireRoles(...processRoles),
+  requireRoles(...viewRoles),
   validateParams(idSchema),
-  validateBody(liabilitySchema),
   async (req: AuthRequest, res: Response): Promise<void> => {
     const { id } = req.params as any;
-    const { liability } = req.body;
-    const result = returnService.determineLiability(id, liability as ReturnLiability);
+    const result = returnService.getReturnById(id);
     res.status(result.code === 200 ? 200 : result.code === 404 ? 404 : 400).json(result);
   },
 );

@@ -40,6 +40,12 @@ const compensationApproveSchema = z.object({
   approverId: z.number().int().min(1),
 });
 
+const updateTrackingStatusSchema = z.object({
+  status: z.string().min(1),
+  location: z.string().min(1),
+  description: z.string().optional(),
+});
+
 const compensationCreateSchema = z.object({
   policyNo: z.string().optional(),
   compensationType: z.string().optional(),
@@ -64,6 +70,20 @@ router.get(
     }
     const result = logisticsService.getTrackings(page, pageSize, status, transportMode);
     res.status(result.code === 200 ? 200 : 400).json(result);
+  },
+);
+
+router.put(
+  '/trackings/:id/status',
+  authMiddleware,
+  requireRoles(...editRoles),
+  validateParams(idSchema),
+  validateBody(updateTrackingStatusSchema),
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    const { id } = req.params as any;
+    const { status, location, description } = req.body;
+    const result = logisticsService.updateTrackingStatus(id, status, location, description);
+    res.status(result.code === 200 ? 200 : result.code === 404 ? 404 : 400).json(result);
   },
 );
 

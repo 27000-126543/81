@@ -338,10 +338,36 @@ class ReportService {
     };
   }
 
-  exportReport(type: string, params: any): ApiResponse<{ url: string; filename: string }> {
-    const today = new Date().toISOString().split('T')[0];
+  exportReport(type: string, format: string, params: any): { buffer: Buffer; filename: string; mimeType: string } | null {
+    const now = new Date();
+    const yearMonth = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const today = now.toISOString().split('T')[0];
+    
+    const typeNames: Record<string, string> = {
+      'supply-chain': '供应链效能',
+      'inventory': '库存分析',
+      'orders': '订单分析',
+      'customs': '清关分析',
+      'logistics': '物流分析',
+    };
+
+    const sheetNames: Record<string, string> = {
+      'supply-chain': '供应链效能分析',
+      'inventory': '库存报表',
+      'orders': '订单报表',
+      'customs': '清关报表',
+      'logistics': '物流报表',
+    };
+
+    const typeName = typeNames[type] || '报表';
+    const sheetName = sheetNames[type] || '报表';
+    const filename = `${typeName}报告_${yearMonth}.${format}`;
+    
+    const mimeType = format === 'xlsx' 
+      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      : 'application/pdf';
+
     let data: any[] = [];
-    let sheetName = '报表';
 
     switch (type) {
       case 'supply-chain': {
@@ -358,7 +384,6 @@ class ReportService {
           '库存周转率': m.inventoryTurnover,
           '退货率(%)': m.returnRate,
         }));
-        sheetName = '供应链效能分析';
         break;
       }
       case 'inventory': {
@@ -372,7 +397,6 @@ class ReportService {
           '库存价值(USD)': m.value,
           '周转率': m.turnoverRate,
         }));
-        sheetName = '库存报表';
         break;
       }
       case 'orders': {
@@ -384,7 +408,6 @@ class ReportService {
           '履约率(%)': m.fulfillmentRate,
           '订单总额(USD)': m.totalAmount,
         }));
-        sheetName = '订单报表';
         break;
       }
       case 'customs': {
@@ -397,7 +420,6 @@ class ReportService {
           '平均通关小时': m.avgClearanceHours,
           '关税总额(USD)': m.totalTax,
         }));
-        sheetName = '清关报表';
         break;
       }
       case 'logistics': {
@@ -411,34 +433,22 @@ class ReportService {
           '异常数量': m.exceptionCount,
           '异常率(%)': m.exceptionRate,
         }));
-        sheetName = '物流报表';
         break;
       }
       default:
-        return {
-          code: 400,
-          message: '不支持的报表类型',
-          data: null as any,
-          timestamp: Date.now(),
-        };
+        return null;
     }
 
     const wb = xlsx.utils.book_new();
     const ws = xlsx.utils.json_to_sheet(data);
     xlsx.utils.book_append_sheet(wb, ws, sheetName);
 
-    const filename = `${type}_report_${today}.xlsx`;
-    const filepath = `/tmp/${filename}`;
-    xlsx.writeFile(wb, filepath);
+    const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
     return {
-      code: 200,
-      message: '报告生成成功',
-      data: {
-        url: `/api/reports/download/${filename}`,
-        filename,
-      },
-      timestamp: Date.now(),
+      buffer: Buffer.from(buffer),
+      filename,
+      mimeType,
     };
   }
 }

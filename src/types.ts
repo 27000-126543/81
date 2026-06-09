@@ -1,3 +1,50 @@
+import type {
+  ApiResponse,
+  PaginatedResponse,
+  UserRole,
+  Region,
+  TransportMode,
+  CustomsStatus,
+  LogisticsExceptionType,
+  ReturnLiability,
+  ApprovalStatus,
+  WorkOrderPriority,
+  WorkOrderType,
+  User,
+  Warehouse,
+  Product,
+  Inventory,
+  TransferOrder,
+  TransferItem,
+  TransferSuggestion,
+  Order,
+  OrderItem,
+  WarehouseOption,
+  FulfillmentRecommendation,
+  CustomsDeclaration,
+  CustomsTrajectory,
+  WorkOrder,
+  LogisticsTracking,
+  LogisticsTrajectoryPoint,
+  LogisticsException,
+  Compensation,
+  CompensationBreakdown,
+  ReturnRecord as SharedReturnRecord,
+  Refund,
+  ApprovalFlow,
+  SystemRule,
+  DashboardKPI,
+  WarehouseTurnover,
+  PortClearanceTime,
+  SalesTrendItem,
+  LogisticsExceptionPoint,
+  InventoryAlert,
+  SupplyChainMetrics,
+  CustomsDocument,
+  LoginRequest,
+  LoginResponse,
+} from '../shared/types';
+
 export type {
   ApiResponse,
   PaginatedResponse,
@@ -29,7 +76,6 @@ export type {
   LogisticsException,
   Compensation,
   CompensationBreakdown,
-  ReturnRecord,
   Refund,
   ApprovalFlow,
   SystemRule,
@@ -43,4 +89,17 @@ export type {
   CustomsDocument,
   LoginRequest,
   LoginResponse,
-} from '../shared/types';
+};
+
+export type ReturnRecord = SharedReturnRecord;
+
+export interface InventoryChange {
+  before: number;
+  after: number;
+  change: number;
+  reason: string;
+}
+
+export type ReturnRecordWithInventory = ReturnRecord & {
+  inventoryChange?: InventoryChange;
+};

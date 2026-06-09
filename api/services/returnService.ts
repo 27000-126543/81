@@ -112,7 +112,7 @@ class ReturnService {
     };
   }
 
-  determineLiability(id: number, liability: ReturnLiability): ApiResponse<ReturnRecord | null> {
+  updateReturnLiability(id: number, liability: ReturnLiability, reason?: string): ApiResponse<(ReturnRecord & { order?: Order; product?: Product; refund?: Refund }) | null> {
     const returnRecord = db.getById<ReturnRecord>('returns', id);
     if (!returnRecord) {
       return {
@@ -123,20 +123,30 @@ class ReturnService {
       };
     }
 
-    const updated = db.update<ReturnRecord>('returns', id, {
+    db.update<ReturnRecord>('returns', id, {
       liability,
       status: 'processing',
     });
 
+    const updated = db.getById<ReturnRecord>('returns', id);
+    const orders = db.getAll<Order>('orders');
+    const products = db.getAll<Product>('products');
+    const refunds = db.getAll<Refund>('refunds');
+
     return {
       code: 200,
       message: '责任判定成功',
-      data: updated,
+      data: {
+        ...updated!,
+        order: orders.find(o => o.id === updated!.orderId),
+        product: products.find(p => p.id === updated!.productId),
+        refund: refunds.find(r => r.returnId === updated!.id),
+      },
       timestamp: Date.now(),
     };
   }
 
-  processRefund(id: number): ApiResponse<Refund | null> {
+  processRefund(id: number): ApiResponse<(ReturnRecord & { order?: Order; product?: Product; refund?: Refund; inventoryChange?: { before: number; after: number; change: number; reason: string } }) | null> {
     const returnRecord = db.getById<ReturnRecord>('returns', id);
     if (!returnRecord) {
       return {
@@ -170,7 +180,7 @@ class ReturnService {
     const deductAmount = returnRecord.liability === 'customer' ? 15 : 0;
     const refundAmount = Math.max(0, Math.round((orderItem.unitPrice * returnRecord.quantity - deductAmount) * 100) / 100);
 
-    const newRefund = db.create<Refund>('refunds', {
+    db.create<Refund>('refunds', {
       returnId: id,
       amount: refundAmount,
       status: 'completed',
@@ -179,27 +189,53 @@ class ReturnService {
 
     db.update<ReturnRecord>('returns', id, { status: 'refunded' });
 
-    if (returnRecord.liability !== 'customer') {
-      const inventory = db.getAll<Inventory>('inventory');
-      const warehouseId = order?.fulfilledWarehouseId || 1;
-      const inv = inventory.find(i => i.warehouseId === warehouseId && i.productId === returnRecord.productId);
+    const inventory = db.getAll<Inventory>('inventory');
+    const warehouseId = order?.fulfilledWarehouseId || 1;
+    const inv = inventory.find(i => i.warehouseId === warehouseId && i.productId === returnRecord.productId);
+    const inventoryBefore = inv?.quantity || 0;
+    let inventoryAfter = inventoryBefore;
+    let changeReason = '';
+
+    if (returnRecord.liability === 'logistics') {
       if (inv) {
-        db.update<Inventory>('inventory', inv.id, {
+        const updatedInv = db.update<Inventory>('inventory', inv.id, {
           quantity: inv.quantity + returnRecord.quantity,
           lastUpdated: new Date().toISOString(),
         });
+        inventoryAfter = updatedInv?.quantity || inventoryBefore;
       }
+      changeReason = '物流责任，商品退回后可重新销售，库存增加';
+    } else if (returnRecord.liability === 'customer') {
+      changeReason = '用户责任，不影响销售库存，库存不变';
+    } else if (returnRecord.liability === 'quality') {
+      changeReason = '品质问题，商品报废处理，库存不变';
     }
+
+    const updated = db.getById<ReturnRecord>('returns', id);
+    const orders = db.getAll<Order>('orders');
+    const products = db.getAll<Product>('products');
+    const refunds = db.getAll<Refund>('refunds');
 
     return {
       code: 200,
       message: '退款处理成功',
-      data: newRefund,
+      data: {
+        ...updated!,
+        order: orders.find(o => o.id === updated!.orderId),
+        product: products.find(p => p.id === updated!.productId),
+        refund: refunds.find(r => r.returnId === updated!.id),
+        inventoryChange: {
+          before: inventoryBefore,
+          after: inventoryAfter,
+          change: inventoryAfter - inventoryBefore,
+          reason: changeReason,
+        },
+      },
       timestamp: Date.now(),
     };
   }
 
-  processExchange(id: number): ApiResponse<ReturnRecord | null> {
+  processExchange(id: number): ApiResponse<(ReturnRecord & { order?: Order; product?: Product; refund?: Refund; inventoryChange?: { before: number; after: number; change: number; reason: string } }) | null> {
     const returnRecord = db.getById<ReturnRecord>('returns', id);
     if (!returnRecord) {
       return {
@@ -210,17 +246,73 @@ class ReturnService {
       };
     }
 
-    const updated = db.update<ReturnRecord>('returns', id, { status: 'exchanged' });
+    if (!returnRecord.liability) {
+      return {
+        code: 400,
+        message: '请先进行责任判定',
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+
+    const order = db.getById<Order>('orders', returnRecord.orderId);
+    const inventory = db.getAll<Inventory>('inventory');
+    const warehouseId = order?.fulfilledWarehouseId || 1;
+    const inv = inventory.find(i => i.warehouseId === warehouseId && i.productId === returnRecord.productId);
+    const inventoryBefore = inv?.quantity || 0;
+    let inventoryAfter = inventoryBefore;
+    let changeReason = '';
+
+    if (inv && inv.quantity >= returnRecord.quantity) {
+      const updatedInv = db.update<Inventory>('inventory', inv.id, {
+        quantity: inv.quantity - returnRecord.quantity,
+        lastUpdated: new Date().toISOString(),
+      });
+      inventoryAfter = updatedInv?.quantity || inventoryBefore;
+    }
+
+    if (returnRecord.liability === 'logistics') {
+      if (inv) {
+        const updatedInv = db.update<Inventory>('inventory', inv.id, {
+          quantity: inventoryAfter + returnRecord.quantity,
+          lastUpdated: new Date().toISOString(),
+        });
+        inventoryAfter = updatedInv?.quantity || inventoryAfter;
+      }
+      changeReason = '换货：发出新商品扣减库存，退回商品因物流责任重新入库，库存不变';
+    } else if (returnRecord.liability === 'customer') {
+      changeReason = '换货：发出新商品扣减库存，退回商品因用户责任不入库，库存减少';
+    } else if (returnRecord.liability === 'quality') {
+      changeReason = '换货：发出新商品扣减库存，退回商品因品质问题报废不入库，库存减少';
+    }
+
+    db.update<ReturnRecord>('returns', id, { status: 'exchanged' });
+
+    const updated = db.getById<ReturnRecord>('returns', id);
+    const orders = db.getAll<Order>('orders');
+    const products = db.getAll<Product>('products');
+    const refunds = db.getAll<Refund>('refunds');
 
     return {
       code: 200,
       message: '换货处理成功',
-      data: updated,
+      data: {
+        ...updated!,
+        order: orders.find(o => o.id === updated!.orderId),
+        product: products.find(p => p.id === updated!.productId),
+        refund: refunds.find(r => r.returnId === updated!.id),
+        inventoryChange: {
+          before: inventoryBefore,
+          after: inventoryAfter,
+          change: inventoryAfter - inventoryBefore,
+          reason: changeReason,
+        },
+      },
       timestamp: Date.now(),
     };
   }
 
-  processScrap(id: number): ApiResponse<ReturnRecord | null> {
+  processScrap(id: number): ApiResponse<(ReturnRecord & { order?: Order; product?: Product; refund?: Refund; inventoryChange?: { before: number; after: number; change: number; reason: string } }) | null> {
     const returnRecord = db.getById<ReturnRecord>('returns', id);
     if (!returnRecord) {
       return {
@@ -231,12 +323,43 @@ class ReturnService {
       };
     }
 
-    const updated = db.update<ReturnRecord>('returns', id, { status: 'scrapped' });
+    if (!returnRecord.liability) {
+      return {
+        code: 400,
+        message: '请先进行责任判定',
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+
+    const order = db.getById<Order>('orders', returnRecord.orderId);
+    const inventory = db.getAll<Inventory>('inventory');
+    const warehouseId = order?.fulfilledWarehouseId || 1;
+    const inv = inventory.find(i => i.warehouseId === warehouseId && i.productId === returnRecord.productId);
+    const inventoryBefore = inv?.quantity || 0;
+
+    db.update<ReturnRecord>('returns', id, { status: 'scrapped' });
+
+    const updated = db.getById<ReturnRecord>('returns', id);
+    const orders = db.getAll<Order>('orders');
+    const products = db.getAll<Product>('products');
+    const refunds = db.getAll<Refund>('refunds');
 
     return {
       code: 200,
       message: '报废处理成功',
-      data: updated,
+      data: {
+        ...updated!,
+        order: orders.find(o => o.id === updated!.orderId),
+        product: products.find(p => p.id === updated!.productId),
+        refund: refunds.find(r => r.returnId === updated!.id),
+        inventoryChange: {
+          before: inventoryBefore,
+          after: inventoryBefore,
+          change: 0,
+          reason: '商品报废处理，不进入库存，库存不变',
+        },
+      },
       timestamp: Date.now(),
     };
   }

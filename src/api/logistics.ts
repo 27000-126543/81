@@ -26,19 +26,19 @@ interface ExceptionQueryParams {
 export const getLogisticsTrackingList = async (
   params: TrackingQueryParams
 ): Promise<PaginatedResponse<LogisticsTracking>> => {
-  const response = await get<PaginatedResponse<LogisticsTracking>>('/logistics/tracking', params);
+  const response = await get<PaginatedResponse<LogisticsTracking>>('/logistics/trackings', params);
   return response.data;
 };
 
 export const getLogisticsTrackingById = async (id: number): Promise<LogisticsTracking> => {
-  const response = await get<LogisticsTracking>(`/logistics/tracking/${id}`);
+  const response = await get<LogisticsTracking>(`/logistics/trackings/${id}`);
   return response.data;
 };
 
 export const getLogisticsTrackingByOrderId = async (
   orderId: number
 ): Promise<LogisticsTracking> => {
-  const response = await get<LogisticsTracking>(`/logistics/tracking/order/${orderId}`);
+  const response = await get<LogisticsTracking>('/logistics/trackings', { orderId });
   return response.data;
 };
 
@@ -48,7 +48,7 @@ export const updateLogisticsStatus = async (
   location: string,
   description: string
 ): Promise<LogisticsTracking> => {
-  const response = await put<LogisticsTracking>(`/logistics/tracking/${id}/status`, {
+  const response = await put<LogisticsTracking>(`/logistics/trackings/${id}/status`, {
     status,
     location,
     description,

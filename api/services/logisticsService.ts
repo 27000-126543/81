@@ -321,6 +321,39 @@ class LogisticsService {
       timestamp: Date.now(),
     };
   }
+
+  updateTrackingStatus(id: number, status: string, location: string, description?: string): ApiResponse<LogisticsTracking | null> {
+    const tracking = db.getById<LogisticsTracking>('logisticsTrackings', id);
+    if (!tracking) {
+      return {
+        code: 404,
+        message: '物流追踪不存在',
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+
+    const newPoint = {
+      timestamp: new Date().toISOString(),
+      location,
+      status,
+      description: description || `包裹${location}`,
+    };
+
+    const updatedTrajectory = [newPoint, ...tracking.trajectory];
+
+    const updated = db.update<LogisticsTracking>('logisticsTrackings', id, {
+      status,
+      trajectory: updatedTrajectory,
+    });
+
+    return {
+      code: 200,
+      message: '物流状态更新成功',
+      data: updated,
+      timestamp: Date.now(),
+    };
+  }
 }
 
 export const logisticsService = new LogisticsService();

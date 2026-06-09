@@ -118,3 +118,27 @@ export const del = async <T>(
     params,
   });
 };
+
+export const getBlob = async (
+  url: string,
+  params?: Record<string, unknown>
+): Promise<{ blob: Blob; filename: string }> => {
+  const response = await api.get(url, {
+    params,
+    responseType: 'blob',
+  });
+  
+  let filename = '';
+  const disposition = response.headers['content-disposition'];
+  if (disposition) {
+    const matches = disposition.match(/filename="?([^"]+)"?/);
+    if (matches && matches[1]) {
+      filename = decodeURIComponent(matches[1]);
+    }
+  }
+  
+  return {
+    blob: response.data,
+    filename,
+  };
+};
