@@ -15,11 +15,13 @@ import {
   Clock,
   RefreshCw,
   AlertTriangle,
+  AlertCircle,
   BarChart3,
   PieChart,
   LineChart,
   ChevronDown,
   Check,
+  CheckCircle,
   Loader2,
   Layers,
   ShoppingCart,
@@ -120,6 +122,12 @@ export default function Analytics() {
     showProgress: false,
     progress: 0,
     format: null,
+  });
+
+  const [toast, setToast] = useState<{ show: boolean; message: string; type: 'success' | 'error' }>({
+    show: false,
+    message: '',
+    type: 'success',
   });
 
   const [supplyChainData, setSupplyChainData] = useState<SupplyChainMetrics[]>([]);
@@ -1011,7 +1019,16 @@ export default function Analytics() {
     } catch (err) {
       clearInterval(progressInterval);
       setExportState({ showConfirm: false, showProgress: false, progress: 0, format: null });
-      console.error('Export failed:', err);
+      const error = err as Error;
+      console.error('Export failed:', error);
+      setToast({
+        show: true,
+        message: error.message || '导出失败',
+        type: 'error',
+      });
+      setTimeout(() => {
+        setToast((prev) => ({ ...prev, show: false }));
+      }, 3000);
     }
   };
 
@@ -1556,6 +1573,19 @@ export default function Analytics() {
           )}
         </div>
       </Modal>
+
+      {toast.show && (
+        <div
+          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-pulse ${
+            toast.type === 'success'
+              ? 'bg-green/20 border border-green/30 text-green-light'
+              : 'bg-red/20 border border-red/30 text-red-light'
+          }`}
+        >
+          {toast.type === 'success' ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+          {toast.message}
+        </div>
+      )}
     </div>
   );
 }

@@ -142,29 +142,41 @@ router.get(
   validateParams(exportTypeSchema),
   validateQuery(reportQuerySchema),
   async (req: AuthRequest, res: Response): Promise<void> => {
-    const { type } = req.params as any;
-    const { format = 'xlsx' } = req.query as any;
-    
-    const result = reportService.exportReport(type, format, req.query);
-    
-    if (!result) {
-      res.status(400).json({
-        code: 400,
-        message: '不支持的报表类型',
+    try {
+      const { type } = req.params as any;
+      const { format = 'xlsx' } = req.query as any;
+      
+      const result = await reportService.exportReport(type, format, req.query);
+      
+      if (!result) {
+        res.setHeader('Content-Type', 'application/json');
+        res.status(400).json({
+          code: 400,
+          message: '不支持的报表类型或生成失败',
+          data: null,
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
+      const { buffer, filename, mimeType } = result;
+
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+      res.setHeader('Content-Length', buffer.length);
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+      
+      res.status(200).send(buffer);
+    } catch (error) {
+      console.error('Export route error:', error);
+      res.setHeader('Content-Type', 'application/json');
+      res.status(500).json({
+        code: 500,
+        message: '服务器错误，导出失败',
         data: null,
         timestamp: Date.now(),
       });
-      return;
     }
-
-    const { buffer, filename, mimeType } = result;
-
-    res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
-    res.setHeader('Content-Length', buffer.length);
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
-    
-    res.status(200).send(buffer);
   },
 );
 

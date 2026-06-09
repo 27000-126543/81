@@ -128,6 +128,17 @@ export const getBlob = async (
     responseType: 'blob',
   });
   
+  const contentType = response.headers['content-type'] as string;
+  if (contentType && contentType.includes('application/json')) {
+    const text = await response.data.text();
+    try {
+      const errorData = JSON.parse(text);
+      throw new Error(errorData.message || '请求失败');
+    } catch {
+      throw new Error('请求失败');
+    }
+  }
+  
   let filename = '';
   const disposition = response.headers['content-disposition'];
   if (disposition) {

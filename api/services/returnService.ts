@@ -167,7 +167,16 @@ class ReturnService {
     }
 
     const order = db.getById<Order>('orders', returnRecord.orderId);
-    const orderItem = order?.items.find(i => i.productId === returnRecord.productId);
+    if (!order?.fulfilledWarehouseId) {
+      return {
+        code: 400,
+        message: '该订单尚未分配发货仓，请先确认订单的发货仓',
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+
+    const orderItem = order.items.find(i => i.productId === returnRecord.productId);
     if (!orderItem) {
       return {
         code: 400,
@@ -190,7 +199,7 @@ class ReturnService {
     db.update<ReturnRecord>('returns', id, { status: 'refunded' });
 
     const inventory = db.getAll<Inventory>('inventory');
-    const warehouseId = order?.fulfilledWarehouseId || 1;
+    const warehouseId = order.fulfilledWarehouseId!;
     const inv = inventory.find(i => i.warehouseId === warehouseId && i.productId === returnRecord.productId);
     const inventoryBefore = inv?.quantity || 0;
     let inventoryAfter = inventoryBefore;
@@ -206,9 +215,9 @@ class ReturnService {
       }
       changeReason = '物流责任，商品退回后可重新销售，库存增加';
     } else if (returnRecord.liability === 'customer') {
-      changeReason = '用户责任，不影响销售库存，库存不变';
+      changeReason = '用户责任，不影响销售库存';
     } else if (returnRecord.liability === 'quality') {
-      changeReason = '品质问题，商品报废处理，库存不变';
+      changeReason = '品质问题，商品报废处理，不增加库存';
     }
 
     const updated = db.getById<ReturnRecord>('returns', id);
@@ -256,8 +265,17 @@ class ReturnService {
     }
 
     const order = db.getById<Order>('orders', returnRecord.orderId);
+    if (!order?.fulfilledWarehouseId) {
+      return {
+        code: 400,
+        message: '该订单尚未分配发货仓，请先确认订单的发货仓',
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+
     const inventory = db.getAll<Inventory>('inventory');
-    const warehouseId = order?.fulfilledWarehouseId || 1;
+    const warehouseId = order.fulfilledWarehouseId!;
     const inv = inventory.find(i => i.warehouseId === warehouseId && i.productId === returnRecord.productId);
     const inventoryBefore = inv?.quantity || 0;
     let inventoryAfter = inventoryBefore;
@@ -279,11 +297,9 @@ class ReturnService {
         });
         inventoryAfter = updatedInv?.quantity || inventoryAfter;
       }
-      changeReason = '换货：发出新商品扣减库存，退回商品因物流责任重新入库，库存不变';
-    } else if (returnRecord.liability === 'customer') {
-      changeReason = '换货：发出新商品扣减库存，退回商品因用户责任不入库，库存减少';
-    } else if (returnRecord.liability === 'quality') {
-      changeReason = '换货：发出新商品扣减库存，退回商品因品质问题报废不入库，库存减少';
+      changeReason = '换货处理，发出新商品扣减库存，退回商品入库，库存不变';
+    } else {
+      changeReason = '换货处理，发出新商品扣减库存，退回商品不入库';
     }
 
     db.update<ReturnRecord>('returns', id, { status: 'exchanged' });
@@ -333,8 +349,17 @@ class ReturnService {
     }
 
     const order = db.getById<Order>('orders', returnRecord.orderId);
+    if (!order?.fulfilledWarehouseId) {
+      return {
+        code: 400,
+        message: '该订单尚未分配发货仓，请先确认订单的发货仓',
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+
     const inventory = db.getAll<Inventory>('inventory');
-    const warehouseId = order?.fulfilledWarehouseId || 1;
+    const warehouseId = order.fulfilledWarehouseId!;
     const inv = inventory.find(i => i.warehouseId === warehouseId && i.productId === returnRecord.productId);
     const inventoryBefore = inv?.quantity || 0;
 
@@ -357,7 +382,7 @@ class ReturnService {
           before: inventoryBefore,
           after: inventoryBefore,
           change: 0,
-          reason: '商品报废处理，不进入库存，库存不变',
+          reason: '商品报废处理，不进入库存',
         },
       },
       timestamp: Date.now(),

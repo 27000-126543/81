@@ -261,6 +261,12 @@ export default function ReturnList() {
 
   const handleConfirmAction = async () => {
     if (!selectedReturn) return;
+
+    if ((confirmAction.type === 'refund' || confirmAction.type === 'exchange' || confirmAction.type === 'scrap') && !selectedReturn.order?.fulfilledWarehouseId) {
+      showToast('该订单尚未分配发货仓，请先到订单管理确认发货仓', 'error');
+      return;
+    }
+
     try {
       let result: ReturnRecordWithInventory | null = null;
       if (confirmAction.type === 'refund') {
@@ -279,8 +285,8 @@ export default function ReturnList() {
         setSelectedReturn(result);
       }
       await fetchReturns();
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : '操作失败', 'error');
+    } catch (err: any) {
+      showToast(err.response?.data?.message || err.message || '操作失败', 'error');
     }
   };
 
@@ -988,8 +994,13 @@ export default function ReturnList() {
                   </div>
                   <div className="text-center">
                     <p className="text-xs text-text-muted mb-1">变化量</p>
-                    <p className={`text-2xl font-bold font-mono ${inventoryChange.change >= 0 ? 'text-cyan' : 'text-red'}`}>
-                      {inventoryChange.change >= 0 ? '+' : ''}{inventoryChange.change}
+                    <p className={`text-2xl font-bold font-mono ${
+                      inventoryChange.change === 0 ? 'text-text-muted' :
+                      inventoryChange.change > 0 ? 'text-cyan' : 'text-red'
+                    }`}>
+                      {inventoryChange.change === 0 ? '不变' :
+                       inventoryChange.change > 0 ? `+${inventoryChange.change}` :
+                       inventoryChange.change}
                     </p>
                   </div>
                 </div>

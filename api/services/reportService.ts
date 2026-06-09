@@ -1,5 +1,6 @@
 import { db } from '../db/database.js';
 import * as xlsx from 'xlsx';
+import PDFDocument from 'pdfkit';
 import type { ApiResponse, SupplyChainMetrics, Order, Inventory, CustomsDeclaration, LogisticsTracking, Product, Warehouse } from '../../shared/types.js';
 
 class ReportService {
@@ -338,118 +339,295 @@ class ReportService {
     };
   }
 
-  exportReport(type: string, format: string, params: any): { buffer: Buffer; filename: string; mimeType: string } | null {
-    const now = new Date();
-    const yearMonth = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const today = now.toISOString().split('T')[0];
-    
-    const typeNames: Record<string, string> = {
-      'supply-chain': '供应链效能',
-      'inventory': '库存分析',
-      'orders': '订单分析',
-      'customs': '清关分析',
-      'logistics': '物流分析',
-    };
-
-    const sheetNames: Record<string, string> = {
-      'supply-chain': '供应链效能分析',
-      'inventory': '库存报表',
-      'orders': '订单报表',
-      'customs': '清关报表',
-      'logistics': '物流报表',
-    };
-
-    const typeName = typeNames[type] || '报表';
-    const sheetName = sheetNames[type] || '报表';
-    const filename = `${typeName}报告_${yearMonth}.${format}`;
-    
-    const mimeType = format === 'xlsx' 
-      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      : 'application/pdf';
-
-    let data: any[] = [];
-
-    switch (type) {
-      case 'supply-chain': {
-        const result = this.getSupplyChainMetrics(params.startDate || '2024-01-01', params.endDate || today);
-        data = (result.data || []).map(m => ({
-          '统计周期': m.period,
-          '订单总数': m.totalOrders,
-          '已完成订单': m.fulfilledOrders,
-          '订单履约率(%)': m.fulfillmentRate,
-          '平均配送天数': m.avgDeliveryDays,
-          '运输总成本(USD)': m.totalTransportCost,
-          '关税总额(USD)': m.totalCustomsTax,
-          '补偿总额(USD)': m.totalCompensation,
-          '库存周转率': m.inventoryTurnover,
-          '退货率(%)': m.returnRate,
-        }));
-        break;
+  private parseYearMonth(params: any): string {
+    if (params.period && typeof params.period === 'string') {
+      const periodMatch = params.period.match(/(\d{4})[-_]?(\d{2})/);
+      if (periodMatch) {
+        return `${periodMatch[1]}${periodMatch[2]}`;
       }
-      case 'inventory': {
-        const result = this.getInventoryReport(params.warehouseId, params.category);
-        data = (result.data || []).map(m => ({
-          '商品ID': m.productId,
-          'SKU': m.sku,
-          '商品名称': m.productName,
-          '仓库名称': m.warehouseName,
-          '库存数量': m.quantity,
-          '库存价值(USD)': m.value,
-          '周转率': m.turnoverRate,
-        }));
-        break;
-      }
-      case 'orders': {
-        const result = this.getOrderReport(params.period, params.warehouseId);
-        data = (result.data || []).map(m => ({
-          '日期': m.date,
-          '订单总数': m.totalOrders,
-          '已完成订单': m.fulfilledOrders,
-          '履约率(%)': m.fulfillmentRate,
-          '订单总额(USD)': m.totalAmount,
-        }));
-        break;
-      }
-      case 'customs': {
-        const result = this.getCustomsReport(params.period, params.port);
-        data = (result.data || []).map(m => ({
-          '口岸': m.port,
-          '申报总数': m.totalDeclarations,
-          '已放行': m.clearedCount,
-          '通关率(%)': m.clearanceRate,
-          '平均通关小时': m.avgClearanceHours,
-          '关税总额(USD)': m.totalTax,
-        }));
-        break;
-      }
-      case 'logistics': {
-        const result = this.getLogisticsReport(params.period, params.carrier);
-        data = (result.data || []).map(m => ({
-          '承运商': m.carrier,
-          '总运输量': m.totalShipments,
-          '准时送达': m.onTimeDelivery,
-          '准时率(%)': m.onTimeRate,
-          '平均配送天数': m.avgDeliveryDays,
-          '异常数量': m.exceptionCount,
-          '异常率(%)': m.exceptionRate,
-        }));
-        break;
-      }
-      default:
-        return null;
     }
 
-    const wb = xlsx.utils.book_new();
-    const ws = xlsx.utils.json_to_sheet(data);
-    xlsx.utils.book_append_sheet(wb, ws, sheetName);
+    if (params.year && params.month) {
+      return `${params.year}${String(params.month).padStart(2, '0')}`;
+    }
 
-    const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    if (params.startDate && typeof params.startDate === 'string') {
+      const dateMatch = params.startDate.match(/(\d{4})[-_]?(\d{2})/);
+      if (dateMatch) {
+        return `${dateMatch[1]}${dateMatch[2]}`;
+      }
+    }
 
-    return {
-      buffer: Buffer.from(buffer),
-      filename,
-      mimeType,
-    };
+    const now = new Date();
+    return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  private formatYearMonthDisplay(yearMonth: string): string {
+    if (yearMonth.length === 6) {
+      return `${yearMonth.substring(0, 4)}年${parseInt(yearMonth.substring(4, 6))}月`;
+    }
+    return yearMonth;
+  }
+
+  private generatePDF(
+    type: string,
+    typeName: string,
+    yearMonth: string,
+    rawData: any[],
+    summaryData?: any
+  ): Promise<Buffer> {
+    return new Promise<Buffer>((resolve) => {
+      const doc = new PDFDocument({ margin: 50, size: 'A4' });
+      const chunks: Buffer[] = [];
+
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+
+      const now = new Date();
+      const generateTime = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+      const periodDisplay = this.formatYearMonthDisplay(yearMonth);
+
+      doc.fontSize(24).text(`${typeName}月度报告`, { align: 'center' });
+      doc.moveDown(0.5);
+      doc.fontSize(14).text('==============================', { align: 'center' });
+      doc.moveDown(1);
+
+      doc.fontSize(12).text(`统计周期：${periodDisplay}`);
+      doc.text(`生成时间：${generateTime}`);
+      doc.moveDown(2);
+
+      if (summaryData && type === 'supply-chain') {
+        doc.fontSize(16).text('一、核心指标摘要');
+        doc.fontSize(12).text('-------------------------------');
+        doc.moveDown(0.5);
+
+        const totalOrders = rawData.reduce((sum: number, item: any) => sum + (item.totalOrders || 0), 0);
+        const totalFulfilled = rawData.reduce((sum: number, item: any) => sum + (item.fulfilledOrders || 0), 0);
+        const avgDelivery = rawData.length > 0 
+          ? rawData.reduce((sum: number, item: any) => sum + (item.avgDeliveryDays || 0), 0) / rawData.length 
+          : 0;
+        const avgTurnover = rawData.length > 0 
+          ? rawData.reduce((sum: number, item: any) => sum + (item.inventoryTurnover || 0), 0) / rawData.length 
+          : 0;
+        const avgReturnRate = rawData.length > 0 
+          ? rawData.reduce((sum: number, item: any) => sum + (item.returnRate || 0), 0) / rawData.length 
+          : 0;
+        const fulfillmentRate = totalOrders > 0 ? (totalFulfilled / totalOrders) * 100 : 0;
+
+        doc.text(`订单总数：${totalOrders.toLocaleString()}`);
+        doc.text(`已完成订单：${totalFulfilled.toLocaleString()}`);
+        doc.text(`订单履约率：${fulfillmentRate.toFixed(1)}%`);
+        doc.text(`平均配送天数：${avgDelivery.toFixed(1)}天`);
+        doc.text(`库存周转率：${avgTurnover.toFixed(1)}`);
+        doc.text(`退货率：${(avgReturnRate * 100).toFixed(1)}%`);
+        doc.moveDown(2);
+      }
+
+      if (rawData.length > 0) {
+        const sections: Record<string, string> = {
+          'supply-chain': '二、订单履约详情',
+          'inventory': '二、库存详情',
+          'orders': '二、订单详情',
+          'customs': '二、清关详情',
+          'logistics': '二、物流详情',
+        };
+
+        doc.fontSize(16).text(sections[type] || '二、数据详情');
+        doc.fontSize(12).text('-------------------------------');
+        doc.moveDown(0.5);
+
+        const columns = Object.keys(rawData[0]);
+        const colWidth = 520 / columns.length;
+        const tableTop = doc.y;
+
+        doc.fontSize(10).font('Helvetica-Bold');
+        columns.forEach((col, i) => {
+          doc.text(col, 50 + i * colWidth, tableTop, { width: colWidth, align: 'left' });
+        });
+
+        doc.font('Helvetica').fontSize(9);
+        let y = tableTop + 20;
+
+        rawData.forEach((row: any, rowIndex: number) => {
+          if (y > 750) {
+            doc.addPage();
+            y = 50;
+          }
+
+          columns.forEach((col, i) => {
+            let value = row[col];
+            if (typeof value === 'number') {
+              value = value.toLocaleString();
+            }
+            doc.text(String(value || ''), 50 + i * colWidth, y + rowIndex * 18, { width: colWidth, align: 'left' });
+          });
+        });
+
+        doc.moveDown(2);
+      }
+
+      if (type === 'supply-chain' && rawData.length > 0) {
+        doc.addPage();
+
+        doc.fontSize(16).text('三、库存周转情况');
+        doc.fontSize(12).text('-------------------------------');
+        doc.moveDown(0.5);
+
+        rawData.forEach((item: any) => {
+          doc.text(`${item.period || item['统计周期']}：库存周转率 ${(item.inventoryTurnover || item['库存周转率']).toFixed(2)}`);
+        });
+        doc.moveDown(2);
+
+        doc.fontSize(16).text('四、清关摘要');
+        doc.fontSize(12).text('-------------------------------');
+        doc.moveDown(0.5);
+        const totalCustomsTax = rawData.reduce((sum: number, item: any) => sum + (item.totalCustomsTax || item['关税总额(USD)'] || 0), 0);
+        doc.text(`总关税：$${totalCustomsTax.toLocaleString()}`);
+        doc.moveDown(2);
+
+        doc.fontSize(16).text('五、物流摘要');
+        doc.fontSize(12).text('-------------------------------');
+        doc.moveDown(0.5);
+        const totalTransportCost = rawData.reduce((sum: number, item: any) => sum + (item.totalTransportCost || item['运输总成本(USD)'] || 0), 0);
+        const totalCompensation = rawData.reduce((sum: number, item: any) => sum + (item.totalCompensation || item['补偿总额(USD)'] || 0), 0);
+        doc.text(`总运输成本：$${totalTransportCost.toLocaleString()}`);
+        doc.text(`总补偿金额：$${totalCompensation.toLocaleString()}`);
+        doc.moveDown(2);
+      }
+
+      doc.fontSize(12).text('==============================', { align: 'center' });
+
+      doc.end();
+    });
+  }
+
+  async exportReport(type: string, format: string, params: any): Promise<{ buffer: Buffer; filename: string; mimeType: string } | null> {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      
+      const typeNames: Record<string, string> = {
+        'supply-chain': '供应链效能',
+        'inventory': '库存分析',
+        'orders': '订单分析',
+        'customs': '清关分析',
+        'logistics': '物流分析',
+      };
+
+      const sheetNames: Record<string, string> = {
+        'supply-chain': '供应链效能分析',
+        'inventory': '库存报表',
+        'orders': '订单报表',
+        'customs': '清关报表',
+        'logistics': '物流报表',
+      };
+
+      const typeName = typeNames[type] || '报表';
+      const sheetName = sheetNames[type] || '报表';
+      const yearMonth = this.parseYearMonth(params);
+      const filename = `${typeName}报告_${yearMonth}.${format}`;
+      
+      const mimeType = format === 'xlsx' 
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : 'application/pdf';
+
+      let rawData: any[] = [];
+      let displayData: any[] = [];
+
+      switch (type) {
+        case 'supply-chain': {
+          const result = this.getSupplyChainMetrics(params.startDate || '2024-01-01', params.endDate || today);
+          rawData = result.data || [];
+          displayData = rawData.map(m => ({
+            '统计周期': m.period,
+            '订单总数': m.totalOrders,
+            '已完成订单': m.fulfilledOrders,
+            '订单履约率(%)': m.fulfillmentRate,
+            '平均配送天数': m.avgDeliveryDays,
+            '运输总成本(USD)': m.totalTransportCost,
+            '关税总额(USD)': m.totalCustomsTax,
+            '补偿总额(USD)': m.totalCompensation,
+            '库存周转率': m.inventoryTurnover,
+            '退货率(%)': m.returnRate,
+          }));
+          break;
+        }
+        case 'inventory': {
+          const result = this.getInventoryReport(params.warehouseId, params.category);
+          rawData = result.data || [];
+          displayData = rawData.map(m => ({
+            '商品ID': m.productId,
+            'SKU': m.sku,
+            '商品名称': m.productName,
+            '仓库名称': m.warehouseName,
+            '库存数量': m.quantity,
+            '库存价值(USD)': m.value,
+            '周转率': m.turnoverRate,
+          }));
+          break;
+        }
+        case 'orders': {
+          const result = this.getOrderReport(params.period, params.warehouseId);
+          rawData = result.data || [];
+          displayData = rawData.map(m => ({
+            '日期': m.date,
+            '订单总数': m.totalOrders,
+            '已完成订单': m.fulfilledOrders,
+            '履约率(%)': m.fulfillmentRate,
+            '订单总额(USD)': m.totalAmount,
+          }));
+          break;
+        }
+        case 'customs': {
+          const result = this.getCustomsReport(params.period, params.port);
+          rawData = result.data || [];
+          displayData = rawData.map(m => ({
+            '口岸': m.port,
+            '申报总数': m.totalDeclarations,
+            '已放行': m.clearedCount,
+            '通关率(%)': m.clearanceRate,
+            '平均通关小时': m.avgClearanceHours,
+            '关税总额(USD)': m.totalTax,
+          }));
+          break;
+        }
+        case 'logistics': {
+          const result = this.getLogisticsReport(params.period, params.carrier);
+          rawData = result.data || [];
+          displayData = rawData.map(m => ({
+            '承运商': m.carrier,
+            '总运输量': m.totalShipments,
+            '准时送达': m.onTimeDelivery,
+            '准时率(%)': m.onTimeRate,
+            '平均配送天数': m.avgDeliveryDays,
+            '异常数量': m.exceptionCount,
+            '异常率(%)': m.exceptionRate,
+          }));
+          break;
+        }
+        default:
+          return null;
+      }
+
+      let buffer: Buffer;
+
+      if (format === 'pdf') {
+        buffer = await this.generatePDF(type, typeName, yearMonth, displayData, rawData);
+      } else {
+        const wb = xlsx.utils.book_new();
+        const ws = xlsx.utils.json_to_sheet(displayData);
+        xlsx.utils.book_append_sheet(wb, ws, sheetName);
+        buffer = Buffer.from(xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+      }
+
+      return {
+        buffer,
+        filename,
+        mimeType,
+      };
+    } catch (error) {
+      console.error('Export report error:', error);
+      return null;
+    }
   }
 }
 
