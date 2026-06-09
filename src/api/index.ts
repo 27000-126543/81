@@ -133,9 +133,9 @@ export const getBlob = async (
     const text = await response.data.text();
     try {
       const errorData = JSON.parse(text);
-      throw new Error(errorData.message || '请求失败');
+      throw new Error(errorData.message || '导出失败');
     } catch {
-      throw new Error('请求失败');
+      throw new Error('导出失败');
     }
   }
   

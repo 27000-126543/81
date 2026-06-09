@@ -94,6 +94,24 @@ class ReturnService {
       };
     }
 
+    if (data.quantity <= 0) {
+      return {
+        code: 400,
+        message: '退货数量必须大于0',
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+
+    if (data.quantity > orderItem.quantity) {
+      return {
+        code: 400,
+        message: `退货数量(${data.quantity})不能超过订单中该商品的购买数量(${orderItem.quantity})`,
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+
     const newReturn = db.create<ReturnRecord>('returns', {
       returnNo: `RET-${String(Date.now()).padStart(6, '0')}`,
       orderId: data.orderId,
@@ -152,6 +170,31 @@ class ReturnService {
       return {
         code: 404,
         message: '退货记录不存在',
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+
+    if (returnRecord.status === 'refunded') {
+      return {
+        code: 400,
+        message: '该退货单已完成退款，请勿重复操作',
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+    if (returnRecord.status === 'exchanged') {
+      return {
+        code: 400,
+        message: '该退货单已完成换货，不能再进行退款',
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+    if (returnRecord.status === 'scrapped') {
+      return {
+        code: 400,
+        message: '该退货单已完成报废，不能再进行退款',
         data: null,
         timestamp: Date.now(),
       };
@@ -255,6 +298,31 @@ class ReturnService {
       };
     }
 
+    if (returnRecord.status === 'refunded') {
+      return {
+        code: 400,
+        message: '该退货单已完成退款，不能再进行换货',
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+    if (returnRecord.status === 'exchanged') {
+      return {
+        code: 400,
+        message: '该退货单已完成换货，请勿重复操作',
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+    if (returnRecord.status === 'scrapped') {
+      return {
+        code: 400,
+        message: '该退货单已完成报废，不能再进行换货',
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+
     if (!returnRecord.liability) {
       return {
         code: 400,
@@ -334,6 +402,31 @@ class ReturnService {
       return {
         code: 404,
         message: '退货记录不存在',
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+
+    if (returnRecord.status === 'refunded') {
+      return {
+        code: 400,
+        message: '该退货单已完成退款，不能再进行报废',
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+    if (returnRecord.status === 'exchanged') {
+      return {
+        code: 400,
+        message: '该退货单已完成换货，不能再进行报废',
+        data: null,
+        timestamp: Date.now(),
+      };
+    }
+    if (returnRecord.status === 'scrapped') {
+      return {
+        code: 400,
+        message: '该退货单已完成报废，请勿重复操作',
         data: null,
         timestamp: Date.now(),
       };

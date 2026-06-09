@@ -339,6 +339,37 @@ class ReportService {
     };
   }
 
+  private parseDateRange(params: any): { startDate: string; endDate: string } {
+    if (params.period && typeof params.period === 'string') {
+      const periodMatch = params.period.match(/(\d{4})[-_]?(\d{2})/);
+      if (periodMatch) {
+        const year = periodMatch[1];
+        const month = periodMatch[2];
+        const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+        return {
+          startDate: `${year}-${month}-01`,
+          endDate: `${year}-${month}-${lastDay}`,
+        };
+      }
+    }
+    
+    if (params.year && params.month) {
+      const year = String(params.year);
+      const month = String(params.month).padStart(2, '0');
+      const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+      return {
+        startDate: `${year}-${month}-01`,
+        endDate: `${year}-${month}-${lastDay}`,
+      };
+    }
+    
+    const today = new Date().toISOString().split('T')[0];
+    return {
+      startDate: params.startDate || '2024-01-01',
+      endDate: params.endDate || today,
+    };
+  }
+
   private parseYearMonth(params: any): string {
     if (params.period && typeof params.period === 'string') {
       const periodMatch = params.period.match(/(\d{4})[-_]?(\d{2})/);
@@ -376,128 +407,145 @@ class ReportService {
     rawData: any[],
     summaryData?: any
   ): Promise<Buffer> {
-    return new Promise<Buffer>((resolve) => {
-      const doc = new PDFDocument({ margin: 50, size: 'A4' });
-      const chunks: Buffer[] = [];
+    return new Promise<Buffer>((resolve, reject) => {
+      try {
+        const doc = new PDFDocument({ margin: 50, size: 'A4' });
+        const chunks: Buffer[] = [];
 
-      doc.on('data', (chunk) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
+        doc.on('data', (chunk) => chunks.push(chunk));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+        doc.on('error', (err) => reject(err));
 
-      const now = new Date();
-      const generateTime = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-      const periodDisplay = this.formatYearMonthDisplay(yearMonth);
+        const now = new Date();
+        const generateTime = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
 
-      doc.fontSize(24).text(`${typeName}月度报告`, { align: 'center' });
-      doc.moveDown(0.5);
-      doc.fontSize(14).text('==============================', { align: 'center' });
-      doc.moveDown(1);
-
-      doc.fontSize(12).text(`统计周期：${periodDisplay}`);
-      doc.text(`生成时间：${generateTime}`);
-      doc.moveDown(2);
-
-      if (summaryData && type === 'supply-chain') {
-        doc.fontSize(16).text('一、核心指标摘要');
-        doc.fontSize(12).text('-------------------------------');
-        doc.moveDown(0.5);
-
-        const totalOrders = rawData.reduce((sum: number, item: any) => sum + (item.totalOrders || 0), 0);
-        const totalFulfilled = rawData.reduce((sum: number, item: any) => sum + (item.fulfilledOrders || 0), 0);
-        const avgDelivery = rawData.length > 0 
-          ? rawData.reduce((sum: number, item: any) => sum + (item.avgDeliveryDays || 0), 0) / rawData.length 
-          : 0;
-        const avgTurnover = rawData.length > 0 
-          ? rawData.reduce((sum: number, item: any) => sum + (item.inventoryTurnover || 0), 0) / rawData.length 
-          : 0;
-        const avgReturnRate = rawData.length > 0 
-          ? rawData.reduce((sum: number, item: any) => sum + (item.returnRate || 0), 0) / rawData.length 
-          : 0;
-        const fulfillmentRate = totalOrders > 0 ? (totalFulfilled / totalOrders) * 100 : 0;
-
-        doc.text(`订单总数：${totalOrders.toLocaleString()}`);
-        doc.text(`已完成订单：${totalFulfilled.toLocaleString()}`);
-        doc.text(`订单履约率：${fulfillmentRate.toFixed(1)}%`);
-        doc.text(`平均配送天数：${avgDelivery.toFixed(1)}天`);
-        doc.text(`库存周转率：${avgTurnover.toFixed(1)}`);
-        doc.text(`退货率：${(avgReturnRate * 100).toFixed(1)}%`);
-        doc.moveDown(2);
-      }
-
-      if (rawData.length > 0) {
-        const sections: Record<string, string> = {
-          'supply-chain': '二、订单履约详情',
-          'inventory': '二、库存详情',
-          'orders': '二、订单详情',
-          'customs': '二、清关详情',
-          'logistics': '二、物流详情',
+        const typeNamesEn: Record<string, string> = {
+          'supply-chain': 'Supply Chain Efficiency',
+          'inventory': 'Inventory Analysis',
+          'orders': 'Order Analysis',
+          'customs': 'Customs Analysis',
+          'logistics': 'Logistics Analysis',
         };
+        const typeNameEn = typeNamesEn[type] || 'Report';
 
-        doc.fontSize(16).text(sections[type] || '二、数据详情');
-        doc.fontSize(12).text('-------------------------------');
+        const year = yearMonth.substring(0, 4);
+        const month = yearMonth.substring(4, 6);
+        const periodDisplay = `${year}-${month}`;
+
+        doc.fontSize(24).text(`${typeNameEn} Monthly Report`, { align: 'center' });
         doc.moveDown(0.5);
+        doc.fontSize(14).text('==============================', { align: 'center' });
+        doc.moveDown(1);
 
-        const columns = Object.keys(rawData[0]);
-        const colWidth = 520 / columns.length;
-        const tableTop = doc.y;
+        doc.fontSize(12).text(`Report Period: ${periodDisplay}`);
+        doc.text(`Generated At: ${generateTime}`);
+        doc.moveDown(2);
 
-        doc.fontSize(10).font('Helvetica-Bold');
-        columns.forEach((col, i) => {
-          doc.text(col, 50 + i * colWidth, tableTop, { width: colWidth, align: 'left' });
-        });
+        if (rawData.length > 0 && type === 'supply-chain') {
+          doc.fontSize(16).text('1. Key Metrics Summary');
+          doc.fontSize(12).text('-------------------------------');
+          doc.moveDown(0.5);
 
-        doc.font('Helvetica').fontSize(9);
-        let y = tableTop + 20;
+          const totalOrders = rawData.reduce((sum: number, item: any) => sum + (item.totalOrders || 0), 0);
+          const totalFulfilled = rawData.reduce((sum: number, item: any) => sum + (item.fulfilledOrders || 0), 0);
+          const avgDelivery = rawData.length > 0 
+            ? rawData.reduce((sum: number, item: any) => sum + (item.avgDeliveryDays || 0), 0) / rawData.length 
+            : 0;
+          const avgTurnover = rawData.length > 0 
+            ? rawData.reduce((sum: number, item: any) => sum + (item.inventoryTurnover || 0), 0) / rawData.length 
+            : 0;
+          const avgReturnRate = rawData.length > 0 
+            ? rawData.reduce((sum: number, item: any) => sum + (item.returnRate || 0), 0) / rawData.length 
+            : 0;
+          const fulfillmentRate = totalOrders > 0 ? (totalFulfilled / totalOrders) * 100 : 0;
 
-        rawData.forEach((row: any, rowIndex: number) => {
-          if (y > 750) {
-            doc.addPage();
-            y = 50;
-          }
+          doc.text(`Total Orders: ${totalOrders.toLocaleString()}`);
+          doc.text(`Fulfilled Orders: ${totalFulfilled.toLocaleString()}`);
+          doc.text(`Fulfillment Rate: ${fulfillmentRate.toFixed(1)}%`);
+          doc.text(`Avg Delivery Days: ${avgDelivery.toFixed(1)} days`);
+          doc.text(`Inventory Turnover: ${avgTurnover.toFixed(1)}`);
+          doc.text(`Return Rate: ${(avgReturnRate * 100).toFixed(1)}%`);
+          doc.moveDown(2);
+        }
 
+        if (rawData.length > 0) {
+          const sectionTitles: Record<string, string> = {
+            'supply-chain': '2. Order Fulfillment Details',
+            'inventory': '2. Inventory Details',
+            'orders': '2. Order Details',
+            'customs': '2. Customs Details',
+            'logistics': '2. Logistics Details',
+          };
+
+          doc.fontSize(16).text(sectionTitles[type] || '2. Data Details');
+          doc.fontSize(12).text('-------------------------------');
+          doc.moveDown(0.5);
+
+          const columns = Object.keys(rawData[0]);
+          const colWidth = Math.min(100, 520 / columns.length);
+          const tableTop = doc.y;
+
+          doc.fontSize(10).font('Helvetica-Bold');
           columns.forEach((col, i) => {
-            let value = row[col];
-            if (typeof value === 'number') {
-              value = value.toLocaleString();
-            }
-            doc.text(String(value || ''), 50 + i * colWidth, y + rowIndex * 18, { width: colWidth, align: 'left' });
+            doc.text(col, 50 + i * colWidth, tableTop, { width: colWidth, align: 'left' });
           });
-        });
 
-        doc.moveDown(2);
+          doc.font('Helvetica').fontSize(9);
+          rawData.forEach((row: any, rowIndex: number) => {
+            const y = tableTop + 20 + rowIndex * 18;
+            if (y > 750) {
+              doc.addPage();
+              return;
+            }
+            columns.forEach((col, i) => {
+              let value = row[col];
+              if (typeof value === 'number') {
+                value = value.toLocaleString();
+              }
+              doc.text(String(value || '-'), 50 + i * colWidth, y, { width: colWidth, align: 'left' });
+            });
+          });
+
+          doc.moveDown(2);
+        }
+
+        if (type === 'supply-chain' && rawData.length > 0) {
+          doc.addPage();
+
+          doc.fontSize(16).text('3. Inventory Turnover');
+          doc.fontSize(12).text('-------------------------------');
+          doc.moveDown(0.5);
+
+          rawData.forEach((item: any) => {
+            const period = item.period || 'N/A';
+            const turnover = item.inventoryTurnover || 0;
+            doc.text(`${period}: Inventory Turnover ${turnover.toFixed(2)}`);
+          });
+          doc.moveDown(2);
+
+          doc.fontSize(16).text('4. Customs Summary');
+          doc.fontSize(12).text('-------------------------------');
+          doc.moveDown(0.5);
+          const totalCustomsTax = rawData.reduce((sum: number, item: any) => sum + (item.totalCustomsTax || 0), 0);
+          doc.text(`Total Customs Tax: $${totalCustomsTax.toLocaleString()}`);
+          doc.moveDown(2);
+
+          doc.fontSize(16).text('5. Logistics Summary');
+          doc.fontSize(12).text('-------------------------------');
+          doc.moveDown(0.5);
+          const totalTransportCost = rawData.reduce((sum: number, item: any) => sum + (item.totalTransportCost || 0), 0);
+          const totalCompensation = rawData.reduce((sum: number, item: any) => sum + (item.totalCompensation || 0), 0);
+          doc.text(`Total Transport Cost: $${totalTransportCost.toLocaleString()}`);
+          doc.text(`Total Compensation: $${totalCompensation.toLocaleString()}`);
+          doc.moveDown(2);
+        }
+
+        doc.fontSize(12).text('==============================', { align: 'center' });
+
+        doc.end();
+      } catch (error) {
+        reject(error);
       }
-
-      if (type === 'supply-chain' && rawData.length > 0) {
-        doc.addPage();
-
-        doc.fontSize(16).text('三、库存周转情况');
-        doc.fontSize(12).text('-------------------------------');
-        doc.moveDown(0.5);
-
-        rawData.forEach((item: any) => {
-          doc.text(`${item.period || item['统计周期']}：库存周转率 ${(item.inventoryTurnover || item['库存周转率']).toFixed(2)}`);
-        });
-        doc.moveDown(2);
-
-        doc.fontSize(16).text('四、清关摘要');
-        doc.fontSize(12).text('-------------------------------');
-        doc.moveDown(0.5);
-        const totalCustomsTax = rawData.reduce((sum: number, item: any) => sum + (item.totalCustomsTax || item['关税总额(USD)'] || 0), 0);
-        doc.text(`总关税：$${totalCustomsTax.toLocaleString()}`);
-        doc.moveDown(2);
-
-        doc.fontSize(16).text('五、物流摘要');
-        doc.fontSize(12).text('-------------------------------');
-        doc.moveDown(0.5);
-        const totalTransportCost = rawData.reduce((sum: number, item: any) => sum + (item.totalTransportCost || item['运输总成本(USD)'] || 0), 0);
-        const totalCompensation = rawData.reduce((sum: number, item: any) => sum + (item.totalCompensation || item['补偿总额(USD)'] || 0), 0);
-        doc.text(`总运输成本：$${totalTransportCost.toLocaleString()}`);
-        doc.text(`总补偿金额：$${totalCompensation.toLocaleString()}`);
-        doc.moveDown(2);
-      }
-
-      doc.fontSize(12).text('==============================', { align: 'center' });
-
-      doc.end();
     });
   }
 
@@ -535,7 +583,8 @@ class ReportService {
 
       switch (type) {
         case 'supply-chain': {
-          const result = this.getSupplyChainMetrics(params.startDate || '2024-01-01', params.endDate || today);
+          const { startDate, endDate } = this.parseDateRange(params);
+          const result = this.getSupplyChainMetrics(startDate, endDate);
           rawData = result.data || [];
           displayData = rawData.map(m => ({
             '统计周期': m.period,
@@ -611,7 +660,7 @@ class ReportService {
       let buffer: Buffer;
 
       if (format === 'pdf') {
-        buffer = await this.generatePDF(type, typeName, yearMonth, displayData, rawData);
+        buffer = await this.generatePDF(type, typeName, yearMonth, rawData, rawData);
       } else {
         const wb = xlsx.utils.book_new();
         const ws = xlsx.utils.json_to_sheet(displayData);

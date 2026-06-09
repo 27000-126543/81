@@ -267,6 +267,45 @@ export default function ReturnList() {
       return;
     }
 
+    if (confirmAction.type === 'refund' && selectedReturn.status === 'refunded') {
+      showToast('该退货单已完成退款，请勿重复操作', 'error');
+      return;
+    }
+    if (confirmAction.type === 'refund' && selectedReturn.status === 'exchanged') {
+      showToast('该退货单已完成换货，不能再进行退款', 'error');
+      return;
+    }
+    if (confirmAction.type === 'refund' && selectedReturn.status === 'scrapped') {
+      showToast('该退货单已完成报废，不能再进行退款', 'error');
+      return;
+    }
+
+    if (confirmAction.type === 'exchange' && selectedReturn.status === 'refunded') {
+      showToast('该退货单已完成退款，不能再进行换货', 'error');
+      return;
+    }
+    if (confirmAction.type === 'exchange' && selectedReturn.status === 'exchanged') {
+      showToast('该退货单已完成换货，请勿重复操作', 'error');
+      return;
+    }
+    if (confirmAction.type === 'exchange' && selectedReturn.status === 'scrapped') {
+      showToast('该退货单已完成报废，不能再进行换货', 'error');
+      return;
+    }
+
+    if (confirmAction.type === 'scrap' && selectedReturn.status === 'refunded') {
+      showToast('该退货单已完成退款，不能再进行报废', 'error');
+      return;
+    }
+    if (confirmAction.type === 'scrap' && selectedReturn.status === 'exchanged') {
+      showToast('该退货单已完成换货，不能再进行报废', 'error');
+      return;
+    }
+    if (confirmAction.type === 'scrap' && selectedReturn.status === 'scrapped') {
+      showToast('该退货单已完成报废，请勿重复操作', 'error');
+      return;
+    }
+
     try {
       let result: ReturnRecordWithInventory | null = null;
       if (confirmAction.type === 'refund') {

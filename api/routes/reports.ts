@@ -12,12 +12,15 @@ const viewRoles: UserRole[] = ['admin', 'operation_director', 'customs_officer',
 const exportRoles: UserRole[] = ['admin', 'operation_director'];
 
 const metricsQuerySchema = z.object({
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式应为 YYYY-MM-DD'),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式应为 YYYY-MM-DD'),
+  period: z.string().optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式应为 YYYY-MM-DD').optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式应为 YYYY-MM-DD').optional(),
 });
 
 const reportQuerySchema = z.object({
   period: z.string().optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式应为 YYYY-MM-DD').optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式应为 YYYY-MM-DD').optional(),
   warehouseId: z.coerce.number().int().min(1).optional(),
   category: z.string().optional(),
   port: z.string().optional(),
@@ -29,13 +32,42 @@ const exportTypeSchema = z.object({
   type: z.enum(['supply-chain', 'inventory', 'orders', 'customs', 'logistics']),
 });
 
+function parseDateRange(params: any): { startDate: string; endDate: string } {
+  if (params.period && typeof params.period === 'string') {
+    const periodMatch = params.period.match(/(\d{4})[-_]?(\d{2})/);
+    if (periodMatch) {
+      const year = periodMatch[1];
+      const month = periodMatch[2];
+      const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+      return {
+        startDate: `${year}-${month}-01`,
+        endDate: `${year}-${month}-${lastDay}`,
+      };
+    }
+  }
+  if (params.year && params.month) {
+    const year = String(params.year);
+    const month = String(params.month).padStart(2, '0');
+    const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+    return {
+      startDate: `${year}-${month}-01`,
+      endDate: `${year}-${month}-${lastDay}`,
+    };
+  }
+  const today = new Date().toISOString().split('T')[0];
+  return {
+    startDate: params.startDate || '2024-01-01',
+    endDate: params.endDate || today,
+  };
+}
+
 router.get(
   '/supply-chain',
   authMiddleware,
   requireRoles(...viewRoles),
   validateQuery(metricsQuerySchema),
   async (req: AuthRequest, res: Response): Promise<void> => {
-    const { startDate, endDate } = req.query as any;
+    const { startDate, endDate } = parseDateRange(req.query);
     const result = reportService.getSupplyChainMetrics(startDate, endDate);
     res.status(result.code === 200 ? 200 : 400).json(result);
   },
@@ -47,7 +79,7 @@ router.get(
   requireRoles(...viewRoles),
   validateQuery(metricsQuerySchema),
   async (req: AuthRequest, res: Response): Promise<void> => {
-    const { startDate, endDate } = req.query as any;
+    const { startDate, endDate } = parseDateRange(req.query);
     const result = reportService.getSupplyChainMetrics(startDate, endDate);
     res.status(result.code === 200 ? 200 : 400).json(result);
   },

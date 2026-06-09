@@ -1016,16 +1016,25 @@ export default function Analytics() {
       setTimeout(() => {
         setExportState({ showConfirm: false, showProgress: false, progress: 0, format: null });
       }, 1500);
-    } catch (err) {
+    } catch (err: any) {
       clearInterval(progressInterval);
       setExportState({ showConfirm: false, showProgress: false, progress: 0, format: null });
-      const error = err as Error;
-      console.error('Export failed:', error);
+      
+      let errorMessage = '导出失败';
+      if (err.message) {
+        errorMessage = err.message;
+      } else if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.response?.statusText) {
+        errorMessage = err.response.statusText;
+      }
+      
       setToast({
         show: true,
-        message: error.message || '导出失败',
+        message: errorMessage,
         type: 'error',
       });
+      console.error('Export failed:', err);
       setTimeout(() => {
         setToast((prev) => ({ ...prev, show: false }));
       }, 3000);
