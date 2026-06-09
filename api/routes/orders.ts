@@ -38,14 +38,15 @@ router.get(
 );
 
 router.get(
-  '/:id',
+  '/my-orders',
   authMiddleware,
-  requireRoles(...viewRoles),
-  validateParams(idSchema),
+  requireRoles('consumer'),
+  validateQuery(orderQuerySchema),
   async (req: AuthRequest, res: Response): Promise<void> => {
-    const { id } = req.params as any;
-    const result = orderService.getOrderById(id);
-    res.status(result.code === 200 ? 200 : result.code === 404 ? 404 : 400).json(result);
+    const { page, pageSize, status } = req.query as any;
+    const userId = req.user!.id;
+    const result = orderService.getOrderList(page, pageSize, status, userId);
+    res.status(result.code === 200 ? 200 : 400).json(result);
   },
 );
 
@@ -57,6 +58,20 @@ router.get(
   async (req: AuthRequest, res: Response): Promise<void> => {
     const { id } = req.params as any;
     const result = orderService.getFulfillmentRecommendation(id);
+    res.status(result.code === 200 ? 200 : result.code === 404 ? 404 : 400).json(result);
+  },
+);
+
+router.post(
+  '/:id/assign-warehouse',
+  authMiddleware,
+  requireRoles(...editRoles),
+  validateParams(idSchema),
+  validateBody(fulfillmentSchema),
+  async (req: AuthRequest, res: Response): Promise<void> => {
+    const { id } = req.params as any;
+    const { warehouseId } = req.body;
+    const result = orderService.confirmFulfillment(id, warehouseId);
     res.status(result.code === 200 ? 200 : result.code === 404 ? 404 : 400).json(result);
   },
 );
@@ -101,30 +116,15 @@ router.put(
   },
 );
 
-router.post(
-  '/:id/assign-warehouse',
+router.get(
+  '/:id',
   authMiddleware,
-  requireRoles(...editRoles),
+  requireRoles(...viewRoles),
   validateParams(idSchema),
-  validateBody(fulfillmentSchema),
   async (req: AuthRequest, res: Response): Promise<void> => {
     const { id } = req.params as any;
-    const { warehouseId } = req.body;
-    const result = orderService.confirmFulfillment(id, warehouseId);
+    const result = orderService.getOrderById(id);
     res.status(result.code === 200 ? 200 : result.code === 404 ? 404 : 400).json(result);
-  },
-);
-
-router.get(
-  '/my-orders',
-  authMiddleware,
-  requireRoles('consumer'),
-  validateQuery(orderQuerySchema),
-  async (req: AuthRequest, res: Response): Promise<void> => {
-    const { page, pageSize, status } = req.query as any;
-    const userId = req.user!.id;
-    const result = orderService.getOrderList(page, pageSize, status, userId);
-    res.status(result.code === 200 ? 200 : 400).json(result);
   },
 );
 
